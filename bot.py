@@ -58,6 +58,145 @@ async def verify (ctx, member_id: int):
         await ctx.send(f"User {member.mention} verified")
     except discord.Forbidden:
         print("The bot can't change roles. Check the bot's permissions and role status.")
+    
+LOG_CHANNEL_NAME = "mod-logs"
+
+
+async def send_mod_log(guild, text):
+    log_channel = discord.utils.get(guild.text_channels, name=LOG_CHANNEL_NAME)
+
+    if log_channel:
+        await log_channel.send(text)
+
+
+class BanModal(discord.ui.Modal, title="Ban user"):
+    user_id = discord.ui.TextInput(
+        label="User ID",
+        placeholder="Enter user ID",
+        required=True
+    )
+
+    reason = discord.ui.TextInput(
+        label="Reason",
+        placeholder="Enter reason",
+        style=discord.TextStyle.paragraph,
+        required=True
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            member = interaction.guild.get_member(int(self.user_id.value))
+
+            if member is None:
+                await interaction.response.send_message(
+                    "User not found on this server.",
+                    ephemeral=True
+                )
+                return
+
+            await member.ban(reason=self.reason.value)
+
+            await interaction.response.send_message(
+                f"User {member.mention} has been banned.",
+                ephemeral=True
+            )
+
+            await send_mod_log(
+                interaction.guild,
+                f"🔨 **BAN**\nModerator: {interaction.user.mention}\nUser: {member.mention}\nReason: {self.reason.value}"
+            )
+
+        except ValueError:
+            await interaction.response.send_message(
+                "Invalid user ID.",
+                ephemeral=True
+            )
+        except discord.Forbidden:
+            await interaction.response.send_message(
+                "I do not have permission to ban this user.",
+                ephemeral=True
+            )
+
+
+class KickModal(discord.ui.Modal, title="Kick user"):
+    user_id = discord.ui.TextInput(
+        label="User ID",
+        placeholder="Enter user ID",
+        required=True
+    )
+
+    reason = discord.ui.TextInput(
+        label="Reason",
+        placeholder="Enter reason",
+        style=discord.TextStyle.paragraph,
+        required=True
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            member = interaction.guild.get_member(int(self.user_id.value))
+
+            if member is None:
+                await interaction.response.send_message(
+                    "User not found on this server.",
+                    ephemeral=True
+                )
+                return
+
+            await member.kick(reason=self.reason.value)
+
+            await interaction.response.send_message(
+                f"User {member} has been kicked.",
+                ephemeral=True
+            )
+
+            await send_mod_log(
+                interaction.guild,
+                f"👢 **KICK**\nModerator: {interaction.user.mention}\nUser: {member}\nReason: {self.reason.value}"
+            )
+
+        except ValueError:
+            await interaction.response.send_message(
+                "Invalid user ID.",
+                ephemeral=True
+            )
+        except discord.Forbidden:
+            await interaction.response.send_message(
+                "I do not have permission to kick this user.",
+                ephemeral=True
+            )
+
+
+class ModerationPanel(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    async def interaction_check(self, interaction: discord.Interaction):
+        allowed_role = "Admin"
+
+        if discord.utils.get(interaction.user.roles, name=allowed_role):
+            return True
+
+        await interaction.response.send_message(
+            "You do not have permission to use this panel.",
+            ephemeral=True
+        )
+        return False
+
+    @discord.ui.button(label="Ban", style=discord.ButtonStyle.danger)
+    async def ban_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(BanModal())
+
+    @discord.ui.button(label="Kick", style=discord.ButtonStyle.secondary)
+    async def kick_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(KickModal())
+
+
+@bot.command()
+@commands.has_role("Admin")
+async def modpanel(ctx):
+    view = ModerationPanel()
+    await ctx.send("Moderation panel:", view=view)
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 
