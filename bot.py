@@ -3,6 +3,14 @@ import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 
+import time
+import json
+
+voice_start = {}
+voice_total = {}
+
+DATA_FILE = "voice_data.json"
+
 load_dotenv()
 
 intents = discord.Intents.default()
@@ -11,8 +19,21 @@ intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+def load_data():
+    global voice_total
+    try:
+        with open(DATA_FILE, "r") as f:
+            voice_total = json.load(f)
+    except:
+        voice_total = {}
+
+def save_data():
+    with open(DATA_FILE, "w") as f:
+        json.dump(voice_total, f)
+
 @bot.event
 async def on_ready():
+    load_data()
     print(f"Logged in as {bot.user}")
 
 @bot.event
@@ -25,6 +46,27 @@ async def on_member_join(member):
         print(f"role issued {role_name} user {member}")
     else:
         print("role not found")
+
+@bot.event
+async def on_voice_state_update(member, before, after):
+    user_id = str(member.id)
+
+    # зашел в голос
+    if before.channel is None and after.channel is not None:
+        voice_start[user_id] = time.time()
+
+    # вышел из голоса
+    elif before.channel is not None and after.channel is None:
+        if user_id in voice_start:
+            spent = time.time() - voice_start[user_id]
+
+            if user_id not in voice_total:
+                voice_total[user_id] = 0
+
+            voice_total[user_id] += spent
+            del voice_start[user_id]
+
+            save_data()
 
 @bot.command()
 async def ping(ctx):
@@ -197,6 +239,24 @@ class ModerationPanel(discord.ui.View):
 async def modpanel(ctx):
     view = ModerationPanel()
     await ctx.send("Moderation panel:", view=view)
+
+@bot.command()
+async def voicetime(ctx):
+    user_id = str(ctx.author.id)
+
+    total = voice_total.get(user_id, 0)
+
+    if user_id in voice_start:
+        total += time.time() - voice_start[user_id]
+
+    hours = int(total // 3600)
+    minutes = int((total % 3600) // 60)
+    seconds = int(total % 60)
+
+    await ctx.send(
+        f"⏱ {ctx.author.mention}, your total voice time is:\n"
+        f"{hours} h {minutes} m {seconds} s"
+    )
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 
