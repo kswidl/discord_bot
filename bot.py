@@ -2,6 +2,7 @@ import os
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
+from collections import defaultdict
 from datetime import timedelta
 
 import time
@@ -11,6 +12,12 @@ voice_start = {}
 voice_total = {}
 
 DATA_FILE = "voice_data.json"
+
+user_messages = defaultdict(list)
+
+SPAM_LIMIT = 10
+SPAM_TIME = 60
+TIMEOUT_MINUTES = 5
 
 load_dotenv()
 
@@ -68,6 +75,43 @@ async def on_voice_state_update(member, before, after):
             del voice_start[user_id]
 
             save_data()
+
+@bot.event
+async def on_message(message):
+    if message.author.bot:
+        return
+
+    user_id = message.author.id
+    now = time.time()
+
+    user_messages[user_id].append(now)
+
+    user_messages[user_id] = [
+        msg_time for msg_time in user_messages[user_id]
+        if now - msg_time <= SPAM_TIME
+    ]
+
+    if len(user_messages[user_id]) > SPAM_LIMIT:
+        try:
+            await message.author.timeout(
+                timedelta(minutes=TIMEOUT_MINUTES),
+                reason="Spam: more than 10 messages in 1 minute"
+            )
+
+            await send_mod_log(
+                message.guild,
+                f"🚫 **ANTI-SPAM TIMEOUT**\n"
+                f"User: {message.author.mention}\n"
+                f"Reason: more than {SPAM_LIMIT} messages in {SPAM_TIME} seconds\n"
+                f"Duration: {TIMEOUT_MINUTES} minutes"
+            )
+
+            user_messages[user_id].clear()
+
+        except discord.Forbidden:
+            print("Bot does not have permission to timeout this user.")
+
+    await bot.process_commands(message)
 
 @bot.command()
 async def ping(ctx):
@@ -317,18 +361,22 @@ class ModerationPanel(discord.ui.View):
     @discord.ui.button(label="Ban", style=discord.ButtonStyle.danger)
     async def ban_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(BanModal())
+        await interaction.message.delete()
 
     @discord.ui.button(label="Kick", style=discord.ButtonStyle.secondary)
     async def kick_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(KickModal())
+        await interaction.message.delete()
 
     @discord.ui.button(label="Timeout", style=discord.ButtonStyle.primary)
     async def timeout_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(TimeoutModal())
+        await interaction.message.delete()
 
     @discord.ui.button(label="Unban", style=discord.ButtonStyle.success)
     async def unban_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(UnbanModal())
+        await interaction.message.delete()
 
 
 @bot.command()
