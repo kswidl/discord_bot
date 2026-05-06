@@ -2,6 +2,7 @@ import os
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
+from datetime import timedelta
 
 import time
 import json
@@ -138,10 +139,7 @@ class BanModal(discord.ui.Modal, title="Ban user"):
 
             await member.ban(reason=self.reason.value)
 
-            await interaction.response.send_message(
-                f"User {member.mention} has been banned.",
-                ephemeral=True
-            )
+            await interaction.response.defer()
 
             await send_mod_log(
                 interaction.guild,
@@ -187,10 +185,7 @@ class KickModal(discord.ui.Modal, title="Kick user"):
 
             await member.kick(reason=self.reason.value)
 
-            await interaction.response.send_message(
-                f"User {member} has been kicked.",
-                ephemeral=True
-            )
+            await interaction.response.defer()
 
             await send_mod_log(
                 interaction.guild,
@@ -208,6 +203,100 @@ class KickModal(discord.ui.Modal, title="Kick user"):
                 ephemeral=True
             )
 
+class TimeoutModal(discord.ui.Modal, title="Timeout user"):
+    user_id = discord.ui.TextInput(
+        label="User ID",
+        placeholder="Enter user ID",
+        required=True
+    )
+
+    minutes = discord.ui.TextInput(
+        label="Minutes",
+        placeholder="Enter timeout duration",
+        required=True
+    )
+
+    reason = discord.ui.TextInput(
+        label="Reason",
+        placeholder="Enter reason",
+        style=discord.TextStyle.paragraph,
+        required=True
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            member = interaction.guild.get_member(int(self.user_id.value))
+
+            if member is None:
+                await interaction.response.send_message(
+                    "User not found.",
+                    ephemeral=True
+                )
+                return
+
+            duration = int(self.minutes.value)
+
+            await member.timeout(
+                timedelta(minutes=duration),
+                reason=self.reason.value
+            )
+
+            await interaction.response.defer()
+
+            await send_mod_log(
+                interaction.guild,
+                f"⏳ **TIMEOUT**\nModerator: {interaction.user.mention}\nUser: {member.mention}\nDuration: {duration} minutes\nReason: {self.reason.value}"
+            )
+
+        except ValueError:
+            await interaction.response.send_message(
+                "Invalid input.",
+                ephemeral=True
+            )
+
+        except discord.Forbidden:
+            await interaction.response.send_message(
+                "I don't have permission.",
+                ephemeral=True
+            )
+
+class UnbanModal(discord.ui.Modal, title="Unban user"):
+    user_id = discord.ui.TextInput(
+        label="User ID",
+        placeholder="Enter user ID",
+        required=True
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            user = await bot.fetch_user(int(self.user_id.value))
+
+            await interaction.guild.unban(user)
+
+            await interaction.response.defer()
+
+            await send_mod_log(
+                interaction.guild,
+                f"✅ **UNBAN**\nModerator: {interaction.user.mention}\nUser: {user}"
+            )
+
+        except ValueError:
+            await interaction.response.send_message(
+                "Invalid user ID.",
+                ephemeral=True
+            )
+
+        except discord.NotFound:
+            await interaction.response.send_message(
+                "User not found in ban list.",
+                ephemeral=True
+            )
+
+        except discord.Forbidden:
+            await interaction.response.send_message(
+                "I don't have permission.",
+                ephemeral=True
+            )
 
 class ModerationPanel(discord.ui.View):
     def __init__(self):
@@ -232,6 +321,14 @@ class ModerationPanel(discord.ui.View):
     @discord.ui.button(label="Kick", style=discord.ButtonStyle.secondary)
     async def kick_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(KickModal())
+
+    @discord.ui.button(label="Timeout", style=discord.ButtonStyle.primary)
+    async def timeout_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(TimeoutModal())
+
+    @discord.ui.button(label="Unban", style=discord.ButtonStyle.success)
+    async def unban_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(UnbanModal())
 
 
 @bot.command()
