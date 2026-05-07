@@ -2,3 +2,4 @@
 __pycache__/
 .env
 voice_data.json
+warns.json

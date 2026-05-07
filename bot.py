@@ -3,7 +3,7 @@ import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 from collections import defaultdict
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import time
 import json
@@ -12,6 +12,9 @@ voice_start = {}
 voice_total = {}
 
 DATA_FILE = "voice_data.json"
+
+WARNS_FILE = "warns.json"
+warns = {}
 
 user_messages = defaultdict(list)
 
@@ -39,9 +42,39 @@ def save_data():
     with open(DATA_FILE, "w") as f:
         json.dump(voice_total, f)
 
+def load_warns():
+    global warns
+    try:
+        with open(WARNS_FILE, "r") as f:
+            warns = json.load(f)
+    except:
+        warns = {}
+
+
+def save_warns():
+    with open(WARNS_FILE, "w") as f:
+        json.dump(warns, f)
+
+def remove_expired_warns(user_id):
+    if user_id not in warns:
+        return
+
+    now = datetime.now()
+    valid_warns = []
+
+    for warn in warns[user_id]:
+        warn_date = datetime.strptime(warn["date"], "%Y-%m-%d %H:%M:%S")
+
+        if now - warn_date <= timedelta(days=30):
+            valid_warns.append(warn)
+
+    warns[user_id] = valid_warns
+    save_warns()
+
 @bot.event
 async def on_ready():
     load_data()
+    load_warns()
     print(f"Logged in as {bot.user}")
 
 @bot.event
@@ -187,7 +220,10 @@ class BanModal(discord.ui.Modal, title="Ban user"):
 
             await send_mod_log(
                 interaction.guild,
-                f"🔨 **BAN**\nModerator: {interaction.user.mention}\nUser: {member.mention}\nReason: {self.reason.value}"
+                f"🔨 **BAN**\n"
+                f"Moderator: {interaction.user.mention}\n"
+                f"User: {member.mention}\n"
+                f"Reason: {self.reason.value}"
             )
 
         except ValueError:
@@ -233,7 +269,10 @@ class KickModal(discord.ui.Modal, title="Kick user"):
 
             await send_mod_log(
                 interaction.guild,
-                f"👢 **KICK**\nModerator: {interaction.user.mention}\nUser: {member}\nReason: {self.reason.value}"
+                f"👢 **KICK**\n"
+                f"Moderator: {interaction.user.mention}\n"
+                f"User: {member.mention}\n"
+                f"Reason: {self.reason.value}"
             )
 
         except ValueError:
@@ -289,7 +328,11 @@ class TimeoutModal(discord.ui.Modal, title="Timeout user"):
 
             await send_mod_log(
                 interaction.guild,
-                f"⏳ **TIMEOUT**\nModerator: {interaction.user.mention}\nUser: {member.mention}\nDuration: {duration} minutes\nReason: {self.reason.value}"
+                f"⏳ **TIMEOUT**\n"
+                f"Moderator: {interaction.user.mention}\n"
+                f"User: {member.mention}\n"
+                f"Duration: {duration} minutes\n"
+                f"Reason: {self.reason.value}"
             )
 
         except ValueError:
@@ -321,7 +364,9 @@ class UnbanModal(discord.ui.Modal, title="Unban user"):
 
             await send_mod_log(
                 interaction.guild,
-                f"✅ **UNBAN**\nModerator: {interaction.user.mention}\nUser: {user}"
+                f"✅ **UNBAN**\n"
+                f"Moderator: {interaction.user.mention}\n"
+                f"User: {user}"
             )
 
         except ValueError:
@@ -342,6 +387,116 @@ class UnbanModal(discord.ui.Modal, title="Unban user"):
                 ephemeral=True
             )
 
+class WarnModal(discord.ui.Modal, title="Warn user"):
+    user_id = discord.ui.TextInput(
+        label="User ID",
+        placeholder="Enter user ID",
+        required=True
+    )
+
+    reason = discord.ui.TextInput(
+        label="Reason",
+        placeholder="Enter reason",
+        style=discord.TextStyle.paragraph,
+        required=True
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            member = interaction.guild.get_member(int(self.user_id.value))
+
+            if member is None:
+                await interaction.response.send_message("User not found.", ephemeral=True)
+                return
+
+            user_id = str(member.id)
+
+            if user_id not in warns:
+                warns[user_id] = []
+
+            warns[user_id].append({
+                "reason": self.reason.value,
+                "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            })
+
+            save_warns()
+
+            warn_count = len(warns[user_id])
+
+            await interaction.response.send_message(
+                f"⚠️ {member.mention} has been warned.",
+                ephemeral=True
+            )
+
+            await send_mod_log(
+                interaction.guild,
+                f"⚠️ **WARN**\n"
+                f"Moderator: {interaction.user.mention}\n"
+                f"User: {member.mention}\n"
+                f"Reason: {self.reason.value}\n"
+                f"Total warns: {warn_count}"
+            )
+
+        except ValueError:
+            await interaction.response.send_message("Invalid user ID.", ephemeral=True)
+
+class UnwarnModal(discord.ui.Modal, title="Remove warns"):
+    user_id = discord.ui.TextInput(
+        label="User ID",
+        placeholder="Enter user ID",
+        required=True
+    )
+
+    amount = discord.ui.TextInput(
+        label="Amount",
+        placeholder="How many warns to remove",
+        required=True
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            member = interaction.guild.get_member(int(self.user_id.value))
+
+            if member is None:
+                await interaction.response.send_message("User not found.", ephemeral=True)
+                return
+
+            amount = int(self.amount.value)
+            user_id = str(member.id)
+
+            remove_expired_warns(user_id)
+
+            if user_id not in warns or len(warns[user_id]) == 0:
+                await interaction.response.send_message("This user has no warns.", ephemeral=True)
+                return
+
+            removed_warns = warns[user_id][-amount:]
+            warns[user_id] = warns[user_id][:-amount]
+
+            save_warns()
+
+            warn_count = len(warns[user_id])
+
+            removed_text = "\n".join(
+                [f"- {warn['reason']}" for warn in removed_warns]
+            )
+
+            await interaction.response.send_message(
+                f"✅ Removed {len(removed_warns)} warn(s) from {member.mention}.",
+                ephemeral=True
+            )
+
+            await send_mod_log(
+                interaction.guild,
+                f"✅ **UNWARN**\n"
+                f"Moderator: {interaction.user.mention}\n"
+                f"User: {member.mention}\n"
+                f"Removed warns:\n{removed_text}\n"
+                f"Total warns: {warn_count}"
+            )
+
+        except ValueError:
+            await interaction.response.send_message("Invalid input.", ephemeral=True)
 class ModerationPanel(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -376,6 +531,17 @@ class ModerationPanel(discord.ui.View):
     @discord.ui.button(label="Unban", style=discord.ButtonStyle.success)
     async def unban_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(UnbanModal())
+        await interaction.message.delete()
+    
+    @discord.ui.button(label="Warn", style=discord.ButtonStyle.primary)
+    async def warn_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(WarnModal())
+        await interaction.message.delete()
+
+
+    @discord.ui.button(label="Unwarn", style=discord.ButtonStyle.success)
+    async def unwarn_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(UnwarnModal())
         await interaction.message.delete()
 
 
