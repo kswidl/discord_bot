@@ -92,11 +92,9 @@ async def on_member_join(member):
 async def on_voice_state_update(member, before, after):
     user_id = str(member.id)
 
-    # зашел в голос
     if before.channel is None and after.channel is not None:
         voice_start[user_id] = time.time()
 
-    # вышел из голоса
     elif before.channel is not None and after.channel is None:
         if user_id in voice_start:
             spent = time.time() - voice_start[user_id]
@@ -567,6 +565,23 @@ async def voicetime(ctx):
     await ctx.send(
         f"⏱ {ctx.author.mention}, your total voice time is:\n"
         f"{hours} h {minutes} m {seconds} s"
+    )
+
+@bot.command()
+@commands.has_role("Admin")
+async def clear(ctx, amount: int):
+    if amount <= 0:
+        await ctx.send("Enter a number greater than 0.")
+        return
+
+    deleted = await ctx.channel.purge(limit=amount + 1)
+
+    await send_mod_log(
+        ctx.guild,
+        f"🧹 **CLEAR**\n"
+        f"Moderator: {ctx.author.mention}\n"
+        f"Channel: {ctx.channel.mention}\n"
+        f"Deleted messages: {len(deleted) - 1}"
     )
 
 @bot.command()
