@@ -569,6 +569,51 @@ async def voicetime(ctx):
         f"{hours} h {minutes} m {seconds} s"
     )
 
+@bot.command()
+async def voicetop(ctx):
+    if not voice_total:
+        await ctx.send("No voice activity data yet.")
+        return
+
+    current_totals = voice_total.copy()
+
+    for user_id, start_time in voice_start.items():
+        current_totals[user_id] = current_totals.get(user_id, 0) + (time.time() - start_time)
+
+    sorted_users = sorted(
+        current_totals.items(),
+        key=lambda item: item[1],
+        reverse=True
+    )
+
+    top_users = sorted_users[:10]
+
+    embed = discord.Embed(
+        title="🎙 Voice Activity Leaderboard",
+        description="Top users by total time spent in voice channels",
+        color=discord.Color.blue()
+    )
+
+    for index, (user_id, total) in enumerate(top_users, start=1):
+        member = ctx.guild.get_member(int(user_id))
+
+        if member:
+            username = member.display_name
+        else:
+            username = "Unknown User"
+
+        hours = int(total // 3600)
+        minutes = int((total % 3600) // 60)
+        seconds = int(total % 60)
+
+        embed.add_field(
+            name=f"{index}. {username}",
+            value=f"{hours}h {minutes}m {seconds}s",
+            inline=False
+        )
+
+    await ctx.send(embed=embed)
+
 TOKEN = os.getenv("DISCORD_TOKEN")
 
 if not TOKEN:
