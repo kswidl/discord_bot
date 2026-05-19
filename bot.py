@@ -21,6 +21,9 @@ user_messages = defaultdict(list)
 SPAM_LIMIT = 10
 SPAM_TIME = 60
 TIMEOUT_MINUTES = 5
+WARN_TIMEOUT = 3
+WARN_KICK = 5
+WARN_BAN = 7
 
 load_dotenv()
 
@@ -421,10 +424,41 @@ class WarnModal(discord.ui.Modal, title="Warn user"):
 
             warn_count = len(warns[user_id])
 
-            await interaction.response.send_message(
-                f"⚠️ {member.mention} has been warned.",
-                ephemeral=True
-            )
+            if warn_count >= WARN_BAN:
+                await member.ban(reason="Too many warns")
+
+                await send_mod_log(
+                    interaction.guild,
+                    f"🔨 **AUTO BAN**\n"
+                    f"User: {member.mention}\n"
+                    f"Warns: {warn_count}"
+                )
+
+            elif warn_count >= WARN_KICK:
+                await member.kick(reason="Too many warns")
+
+                await send_mod_log(
+                    interaction.guild,
+                    f"👢 **AUTO KICK**\n"
+                    f"User: {member.mention}\n"
+                    f"Warns: {warn_count}"
+                )
+
+            elif warn_count >= WARN_TIMEOUT:
+                await member.timeout(
+                    timedelta(minutes=30),
+                    reason="Too many warns"
+                )
+
+                await send_mod_log(
+                    interaction.guild,
+                    f"⏳ **AUTO TIMEOUT**\n"
+                    f"User: {member.mention}\n"
+                    f"Warns: {warn_count}\n"
+                    f"Duration: 30 minutes"
+                )
+
+            await interaction.response.defer()
 
             await send_mod_log(
                 interaction.guild,
@@ -479,10 +513,7 @@ class UnwarnModal(discord.ui.Modal, title="Remove warns"):
                 [f"- {warn['reason']}" for warn in removed_warns]
             )
 
-            await interaction.response.send_message(
-                f"✅ Removed {len(removed_warns)} warn(s) from {member.mention}.",
-                ephemeral=True
-            )
+            await interaction.response.defer()
 
             await send_mod_log(
                 interaction.guild,
